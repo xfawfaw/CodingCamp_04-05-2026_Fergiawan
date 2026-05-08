@@ -2,6 +2,139 @@
   'use strict';
 
   // ---------------------------------------------------------------------------
+  // ParticleModule — floating particle background on <canvas id="particle-canvas">
+  // Palette: solid light-pink #ffb3d1 and light-cyan #a5f3fc on white/dark bg.
+  // Particles drift slowly and gently repel from the mouse cursor.
+  // ---------------------------------------------------------------------------
+  var ParticleModule = {
+    _canvas: null,
+    _ctx: null,
+    _particles: [],
+    _mouse: { x: -9999, y: -9999 },
+    _raf: null,
+    _COLORS_LIGHT: ['#ffb3d1', '#ffb3d1', '#a5f3fc', '#a5f3fc', '#ffd6e8', '#cffafe'],
+    _COLORS_DARK:  ['#f472b6', '#22d3ee', '#ffb3d1', '#a5f3fc', '#e879f9', '#67e8f9'],
+    _COUNT: 55,
+    _REPEL_RADIUS: 90,
+    _REPEL_FORCE: 0.045,
+
+    init: function () {
+      var self = this;
+      this._canvas = document.getElementById('particle-canvas');
+      if (!this._canvas) { return; }
+      this._ctx = this._canvas.getContext('2d');
+      this._resize();
+      this._spawn();
+
+      window.addEventListener('resize', function () { self._resize(); self._spawn(); });
+      window.addEventListener('mousemove', function (e) {
+        self._mouse.x = e.clientX;
+        self._mouse.y = e.clientY;
+      });
+      window.addEventListener('mouseleave', function () {
+        self._mouse.x = -9999;
+        self._mouse.y = -9999;
+      });
+
+      this._loop();
+    },
+
+    _resize: function () {
+      if (!this._canvas) { return; }
+      this._canvas.width  = window.innerWidth;
+      this._canvas.height = window.innerHeight;
+    },
+
+    _spawn: function () {
+      var w = this._canvas.width;
+      var h = this._canvas.height;
+      this._particles = [];
+      for (var i = 0; i < this._COUNT; i++) {
+        this._particles.push(this._make(
+          Math.random() * w,
+          Math.random() * h
+        ));
+      }
+    },
+
+    _make: function (x, y) {
+      var isDark = document.body.getAttribute('data-theme') === 'dark';
+      var palette = isDark ? this._COLORS_DARK : this._COLORS_LIGHT;
+      var r = 3 + Math.random() * 9;
+      return {
+        x: x, y: y,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        r: r,
+        baseR: r,
+        color: palette[Math.floor(Math.random() * palette.length)],
+        alpha: 0.35 + Math.random() * 0.45,
+        pulse: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.008 + Math.random() * 0.012
+      };
+    },
+
+    _loop: function () {
+      var self = this;
+      this._raf = requestAnimationFrame(function () { self._loop(); });
+      this._draw();
+    },
+
+    _draw: function () {
+      var canvas = this._canvas;
+      var ctx    = this._ctx;
+      var w = canvas.width;
+      var h = canvas.height;
+      var mx = this._mouse.x;
+      var my = this._mouse.y;
+      var rr = this._REPEL_RADIUS;
+      var rf = this._REPEL_FORCE;
+
+      ctx.clearRect(0, 0, w, h);
+
+      for (var i = 0; i < this._particles.length; i++) {
+        var p = this._particles[i];
+
+        /* Pulse size */
+        p.pulse += p.pulseSpeed;
+        p.r = p.baseR + Math.sin(p.pulse) * (p.baseR * 0.18);
+
+        /* Mouse repulsion */
+        var dx = p.x - mx;
+        var dy = p.y - my;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < rr && dist > 0) {
+          var force = (rr - dist) / rr;
+          p.vx += (dx / dist) * force * rf;
+          p.vy += (dy / dist) * force * rf;
+        }
+
+        /* Dampen velocity */
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+
+        /* Move */
+        p.x += p.vx;
+        p.y += p.vy;
+
+        /* Wrap edges */
+        if (p.x < -p.r)  { p.x = w + p.r; }
+        if (p.x > w + p.r){ p.x = -p.r; }
+        if (p.y < -p.r)  { p.y = h + p.r; }
+        if (p.y > h + p.r){ p.y = -p.r; }
+
+        /* Draw */
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // StorageModule — wraps localStorage with JSON serialization and error handling
   // ---------------------------------------------------------------------------
   var StorageModule = {
@@ -93,6 +226,10 @@
       if (icon) { icon.textContent = isDark ? '☀️' : '🌙'; }
       if (label) { label.textContent = isDark ? 'Light mode' : 'Dark mode'; }
       if (btn) { btn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode'); }
+      // Re-spawn particles with the new palette
+      if (typeof ParticleModule !== 'undefined' && ParticleModule._canvas) {
+        ParticleModule._spawn();
+      }
     }
   };
 
@@ -285,6 +422,9 @@
       this.intervalId = null;
       this.running = false;
       this.updateButtons();
+      // Revert display to pink idle style
+      var display = document.getElementById('timer-display');
+      if (display) { display.classList.remove('running'); }
     },
 
     // Start — create interval, update state and buttons
@@ -292,15 +432,24 @@
       var self = this;
       this.running = true;
       this.updateButtons();
+      // Switch display to cyan running style
+      var display = document.getElementById('timer-display');
+      if (display) { display.classList.add('running'); }
       this.intervalId = setInterval(function () {
         self.tick();
       }, 1000);
     },
 
-    // Countdown tick — decrement, re-render; alert and stop at 0
+    // Countdown tick — decrement, re-render; bounce animation on each tick
     tick: function () {
       this.remaining -= 1;
       this.renderDisplay();
+      var display = document.getElementById('timer-display');
+      if (display) {
+        display.classList.remove('animate-tick');
+        void display.offsetWidth; /* reflow to restart animation */
+        display.classList.add('animate-tick');
+      }
       if (this.remaining === 0) {
         this.stop();
         window.alert("Time's up! Take a break.");
@@ -747,6 +896,7 @@
   var App = {
     init: function () {
       StorageModule.init();
+      ParticleModule.init();
       ThemeModule.init();
       GreetingModule.initNameUI();
       ClockModule.init(document.getElementById('clock-widget'));

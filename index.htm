@@ -4,109 +4,305 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>To-Do Life Dashboard</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ['attribute', '[data-theme="dark"]'],
+      theme: {
+        extend: {
+          colors: {
+            /* Solid palette — no gradients on text */
+            lpink:  '#ffb3d1',   /* light pink  */
+            lcyan:  '#a5f3fc',   /* light cyan  */
+            dpink:  '#f472b6',   /* deeper pink for borders/accents */
+            dcyan:  '#22d3ee',   /* deeper cyan for borders/accents */
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+          },
+          keyframes: {
+            fadeIn:    { from: { opacity: '0', transform: 'translateY(6px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+            slideUp:   { from: { opacity: '0', transform: 'translateY(12px) scale(0.97)' }, to: { opacity: '1', transform: 'translateY(0) scale(1)' } },
+            pulseSoft: { '0%,100%': { opacity: '1', transform: 'scale(1)' }, '50%': { opacity: '0.7', transform: 'scale(1.02)' } },
+            ringPulse: { '0%,100%': { transform: 'scale(1)', opacity: '0.5' }, '50%': { transform: 'scale(1.08)', opacity: '0.8' } },
+            tickBounce:{ '0%': { transform: 'scale(1)' }, '40%': { transform: 'scale(1.06)' }, '100%': { transform: 'scale(1)' } },
+          },
+          animation: {
+            'fade-in':     'fadeIn 0.4s cubic-bezier(.22,1,.36,1) both',
+            'slide-up':    'slideUp 0.35s cubic-bezier(.22,1,.36,1) both',
+            'pulse-soft':  'pulseSoft 3s ease-in-out infinite',
+            'ring-pulse':  'ringPulse 2.5s ease-in-out infinite',
+            'tick-bounce': 'tickBounce 0.25s ease both',
+          },
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
+
   <link rel="stylesheet" href="css/style.css" />
 </head>
-<body>
 
-  <!-- Storage warning banner (hidden by default) -->
-  <div id="storage-warning" role="alert" aria-live="polite" hidden>
-    <p>⚠️ Local storage is unavailable. Your data will not be saved between sessions.</p>
-  </div>
+<!-- ─── body ─────────────────────────────────────────────────────────────── -->
+<body class="min-h-screen font-sans overflow-x-hidden" data-theme="light">
 
-  <!-- Top bar: theme toggle -->
-  <div id="top-bar">
-    <button id="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
-      <span id="theme-icon" aria-hidden="true">🌙</span>
-      <span id="theme-label">Dark mode</span>
-    </button>
-  </div>
+  <!-- Particle canvas — sits behind everything -->
+  <canvas id="particle-canvas"
+          class="fixed inset-0 w-full h-full pointer-events-none"
+          style="z-index:0"></canvas>
 
-  <main>
-    <h1 class="visually-hidden">Life Dashboard</h1>
+  <!-- Page content wrapper — sits above canvas -->
+  <div class="relative" style="z-index:1">
 
-    <!-- Clock & Greeting Widget -->
-    <section id="clock-widget" aria-label="Clock and Greeting">
-      <h2 class="widget-title">Clock</h2>
-      <div id="greeting-text" aria-live="polite"></div>
-      <!-- Name customisation -->
-      <div id="name-row">
-        <span id="name-display"></span>
-        <button id="name-edit-btn" type="button" aria-label="Edit your name">✏️</button>
-        <form id="name-form" hidden novalidate>
-          <label for="name-input" class="visually-hidden">Your name</label>
-          <input id="name-input" type="text" placeholder="Your name…" autocomplete="off" maxlength="40" />
-          <button type="submit" aria-label="Save name">Save</button>
-          <button type="button" id="name-cancel-btn" aria-label="Cancel name edit">Cancel</button>
+    <!-- Storage warning -->
+    <div id="storage-warning"
+         role="alert" aria-live="polite" hidden
+         class="flex items-center justify-center gap-2 px-4 py-2.5
+                bg-amber-50 border-b border-amber-200 text-amber-700
+                text-sm font-medium animate-fade-in">
+      <span>⚠️</span>
+      <p class="m-0">Local storage is unavailable. Your data will not be saved between sessions.</p>
+    </div>
+
+    <!-- ─── Top bar ────────────────────────────────────────────────────────── -->
+    <header class="sticky top-0 z-50 flex items-center justify-between
+                   px-6 py-3 backdrop-blur-md
+                   bg-white/80 border-b border-lpink/40
+                   shadow-sm transition-all duration-300
+                   dark:bg-gray-900/80 dark:border-gray-700/50">
+
+      <!-- Brand -->
+      <div class="flex items-center gap-2 select-none">
+        <span class="text-xl transition-transform duration-300 hover:rotate-12 hover:scale-125 cursor-default">✨</span>
+        <span class="font-bold text-base tracking-tight text-dpink dark:text-lpink">
+          Life Dashboard
+        </span>
+      </div>
+
+      <!-- Theme toggle -->
+      <button id="theme-toggle" type="button"
+              aria-label="Switch to dark mode" aria-pressed="false"
+              class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium
+                     border-2 border-lpink bg-white text-gray-600
+                     hover:border-dpink hover:bg-lpink/20 hover:text-dpink
+                     hover:scale-105 hover:-rotate-1
+                     active:scale-95 active:rotate-0
+                     transition-all duration-200 cursor-pointer
+                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300
+                     dark:hover:border-lcyan dark:hover:bg-lcyan/10 dark:hover:text-dcyan">
+        <span id="theme-icon" aria-hidden="true"
+              class="text-base transition-transform duration-300 group-hover:rotate-180 group-hover:scale-110">🌙</span>
+        <span id="theme-label" class="hidden sm:inline">Dark mode</span>
+      </button>
+    </header>
+
+    <!-- ─── Dashboard grid ─────────────────────────────────────────────────── -->
+    <main class="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 md:p-8 max-w-5xl mx-auto">
+      <h1 class="sr-only">Life Dashboard</h1>
+
+      <!-- ── Clock & Greeting ───────────────────────────────────────────── -->
+      <section id="clock-widget"
+               aria-label="Clock and Greeting"
+               class="widget-card animate-fade-in text-center">
+
+        <h2 class="widget-title">
+          <span class="mr-1.5 transition-transform duration-300 group-hover:rotate-12">🕐</span>Clock
+        </h2>
+
+        <!-- Greeting -->
+        <div id="greeting-text"
+             aria-live="polite"
+             class="text-xl font-bold text-dpink dark:text-lpink
+                    animate-pulse-soft tracking-wide">
+        </div>
+
+        <!-- Name row -->
+        <div id="name-row"
+             class="flex items-center justify-center gap-2 flex-wrap min-h-[2rem]">
+          <span id="name-display"
+                class="text-sm text-gray-400 italic dark:text-gray-500"></span>
+          <button id="name-edit-btn" type="button"
+                  aria-label="Edit your name"
+                  class="text-xs px-2.5 py-1 rounded-full border-2 border-lpink
+                         text-dpink bg-white
+                         hover:bg-lpink hover:text-white hover:scale-105 hover:-rotate-1
+                         active:scale-95
+                         transition-all duration-200 cursor-pointer
+                         dark:border-gray-600 dark:text-gray-400 dark:bg-gray-800
+                         dark:hover:bg-gray-700 dark:hover:text-lcyan dark:hover:border-lcyan">
+            ✏️ Edit name
+          </button>
+          <form id="name-form" hidden novalidate
+                class="flex items-center gap-1.5 flex-wrap justify-center">
+            <label for="name-input" class="sr-only">Your name</label>
+            <input id="name-input" type="text"
+                   placeholder="Your name…" autocomplete="off" maxlength="40"
+                   class="input-field w-36 text-sm py-1" />
+            <button type="submit" aria-label="Save name"
+                    class="btn-pink text-xs py-1 px-3">Save</button>
+            <button type="button" id="name-cancel-btn" aria-label="Cancel name edit"
+                    class="btn-ghost text-xs py-1 px-3">Cancel</button>
+          </form>
+        </div>
+
+        <!-- Time display — solid color, no bg-clip-text conflict -->
+        <time id="clock-time"
+              aria-live="polite"
+              class="block font-mono text-5xl md:text-6xl font-bold tracking-tight
+                     text-dpink dark:text-lcyan
+                     leading-none py-1
+                     transition-transform duration-150">
+        </time>
+
+        <!-- Date -->
+        <div id="clock-date"
+             aria-live="polite"
+             class="text-sm text-gray-400 dark:text-gray-500 mt-1">
+        </div>
+      </section>
+
+      <!-- ── Focus Timer ─────────────────────────────────────────────────── -->
+      <section id="timer-widget"
+               aria-label="Focus Timer"
+               class="widget-card animate-fade-in text-center"
+               style="animation-delay:60ms">
+
+        <h2 class="widget-title">
+          <span class="mr-1.5">⏱️</span>Focus Timer
+        </h2>
+
+        <!-- Timer display — clean, no conflicting backgrounds -->
+        <div class="flex flex-col items-center gap-3 py-2">
+
+          <!-- Decorative ring (purely visual, separate element) -->
+          <div class="relative flex items-center justify-center">
+            <div class="absolute w-44 h-20 rounded-full bg-lcyan/30 dark:bg-lcyan/10
+                        animate-ring-pulse blur-md pointer-events-none"></div>
+
+            <!-- The actual display box — solid bg, solid text, no conflicts -->
+            <div id="timer-display"
+                 aria-live="polite" aria-atomic="true"
+                 class="timer-display-box">
+              25:00
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="flex justify-center gap-3 flex-wrap">
+            <button id="timer-start" type="button" aria-label="Start focus timer"
+                    class="btn-pink">
+              ▶ Start
+            </button>
+            <button id="timer-stop" type="button" disabled aria-label="Stop focus timer"
+                    class="btn-cyan">
+              ⏸ Stop
+            </button>
+            <button id="timer-reset" type="button" aria-label="Reset focus timer"
+                    class="btn-ghost">
+              ↺ Reset
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── To-Do List ──────────────────────────────────────────────────── -->
+      <section id="todo-widget"
+               aria-label="To-Do List"
+               class="widget-card animate-fade-in"
+               style="animation-delay:120ms">
+
+        <h2 class="widget-title">
+          <span class="mr-1.5">✅</span>To-Do List
+        </h2>
+
+        <!-- Add form -->
+        <form id="todo-form" novalidate class="flex gap-2">
+          <label for="todo-input" class="sr-only">New task description</label>
+          <input id="todo-input" type="text"
+                 placeholder="Add a new task…"
+                 autocomplete="off"
+                 aria-describedby="todo-error"
+                 class="input-field flex-1" />
+          <button type="submit" aria-label="Add new task"
+                  class="btn-pink shrink-0">
+            + Add
+          </button>
         </form>
-      </div>
-      <time id="clock-time" aria-live="polite"></time>
-      <div id="clock-date" aria-live="polite"></div>
-    </section>
 
-    <!-- Focus Timer Widget -->
-    <section id="timer-widget" aria-label="Focus Timer">
-      <h2 class="widget-title">Focus Timer</h2>
-      <div id="timer-display" aria-live="polite" aria-atomic="true">25:00</div>
-      <div class="timer-controls">
-        <button id="timer-start" type="button" aria-label="Start focus timer">Start</button>
-        <button id="timer-stop" type="button" disabled aria-label="Stop focus timer">Stop</button>
-        <button id="timer-reset" type="button" aria-label="Reset focus timer">Reset</button>
-      </div>
-    </section>
+        <!-- Error -->
+        <p id="todo-error" role="alert" aria-live="assertive"
+           class="text-xs text-dpink dark:text-lpink min-h-[1rem] -mt-1 px-1 font-medium"></p>
 
-    <!-- To-Do List Widget -->
-    <section id="todo-widget" aria-label="To-Do List">
-      <h2 class="widget-title">To-Do List</h2>
-      <form id="todo-form" novalidate>
-        <label for="todo-input" class="visually-hidden">New task description</label>
-        <input
-          id="todo-input"
-          type="text"
-          placeholder="Add a new task…"
-          autocomplete="off"
-          aria-describedby="todo-error"
-        />
-        <button type="submit" aria-label="Add new task">Add</button>
-      </form>
-      <p id="todo-error" role="alert" aria-live="assertive"></p>
-      <!-- Sort controls -->
-      <div id="todo-sort-row" aria-label="Sort tasks">
-        <label for="todo-sort" class="sort-label">Sort:</label>
-        <select id="todo-sort" aria-label="Sort tasks by">
-          <option value="added">Date added</option>
-          <option value="alpha">A → Z</option>
-          <option value="status">Incomplete first</option>
-        </select>
-      </div>
-      <ul id="todo-list" aria-label="Task list"></ul>
-    </section>
+        <!-- Sort row -->
+        <div id="todo-sort-row" aria-label="Sort tasks"
+             class="flex items-center gap-2">
+          <label for="todo-sort"
+                 class="text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            Sort:
+          </label>
+          <select id="todo-sort" aria-label="Sort tasks by"
+                  class="input-field text-xs py-1 flex-1 max-w-[160px] cursor-pointer">
+            <option value="added">Date added</option>
+            <option value="alpha">A → Z</option>
+            <option value="status">Incomplete first</option>
+          </select>
+        </div>
 
-    <!-- Quick Links Widget -->
-    <section id="links-widget" aria-label="Quick Links">
-      <h2 class="widget-title">Quick Links</h2>
-      <form id="links-form" novalidate>
-        <label for="links-label-input" class="visually-hidden">Link label</label>
-        <input
-          id="links-label-input"
-          type="text"
-          placeholder="Label"
-          autocomplete="off"
-          aria-describedby="links-error"
-        />
-        <label for="links-url-input" class="visually-hidden">Link URL</label>
-        <input
-          id="links-url-input"
-          type="url"
-          placeholder="https://example.com"
-          autocomplete="off"
-          aria-describedby="links-error"
-        />
-        <button type="submit" aria-label="Add new link">Add</button>
-      </form>
-      <p id="links-error" role="alert" aria-live="assertive"></p>
-      <div id="links-container" aria-label="Saved links"></div>
-    </section>
-  </main>
+        <!-- Task list -->
+        <ul id="todo-list" aria-label="Task list"
+            class="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1 todo-scroll">
+        </ul>
+      </section>
+
+      <!-- ── Quick Links ─────────────────────────────────────────────────── -->
+      <section id="links-widget"
+               aria-label="Quick Links"
+               class="widget-card animate-fade-in"
+               style="animation-delay:180ms">
+
+        <h2 class="widget-title">
+          <span class="mr-1.5">🔗</span>Quick Links
+        </h2>
+
+        <!-- Add form -->
+        <form id="links-form" novalidate class="flex gap-2 flex-wrap">
+          <label for="links-label-input" class="sr-only">Link label</label>
+          <input id="links-label-input" type="text"
+                 placeholder="Label"
+                 autocomplete="off"
+                 aria-describedby="links-error"
+                 class="input-field flex-1 min-w-[80px]" />
+          <label for="links-url-input" class="sr-only">Link URL</label>
+          <input id="links-url-input" type="url"
+                 placeholder="https://example.com"
+                 autocomplete="off"
+                 aria-describedby="links-error"
+                 class="input-field flex-[2] min-w-[140px]" />
+          <button type="submit" aria-label="Add new link"
+                  class="btn-pink shrink-0">
+            + Add
+          </button>
+        </form>
+
+        <!-- Error -->
+        <p id="links-error" role="alert" aria-live="assertive"
+           class="text-xs text-dpink dark:text-lpink min-h-[1rem] -mt-1 px-1 font-medium"></p>
+
+        <!-- Links container -->
+        <div id="links-container" aria-label="Saved links"
+             class="flex flex-wrap gap-2 min-h-[2.5rem]">
+        </div>
+      </section>
+
+    </main>
+  </div><!-- /content wrapper -->
 
   <script src="js/script.js"></script>
 </body>
