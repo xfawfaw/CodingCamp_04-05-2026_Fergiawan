@@ -220,29 +220,6 @@ var TodoModule = {
   },
 
   // ---------------------------------------------------------------------------
-  // toggleTask — flip completed boolean, persist, re-render
-  // ---------------------------------------------------------------------------
-  toggleTask: function (id) {
-    for (var i = 0; i < this.tasks.length; i++) {
-      if (this.tasks[i].id === id) {
-        this.tasks[i].completed = !this.tasks[i].completed;
-        break;
-      }
-    }
-    this._storage.set('tdl_tasks', this.tasks);
-    this.renderAll();
-  },
-
-  // ---------------------------------------------------------------------------
-  // deleteTask — filter task from array, persist, re-render
-  // ---------------------------------------------------------------------------
-  deleteTask: function (id) {
-    this.tasks = this.tasks.filter(function (t) { return t.id !== id; });
-    this._storage.set('tdl_tasks', this.tasks);
-    this.renderAll();
-  },
-
-  // ---------------------------------------------------------------------------
   // editTask — validate and apply an edit to a task's description
   // Returns nothing; calls renderAll() in all cases.
   // ---------------------------------------------------------------------------

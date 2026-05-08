@@ -13,6 +13,14 @@
     <p>⚠️ Local storage is unavailable. Your data will not be saved between sessions.</p>
   </div>
 
+  <!-- Top bar: theme toggle -->
+  <div id="top-bar">
+    <button id="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+      <span id="theme-icon" aria-hidden="true">🌙</span>
+      <span id="theme-label">Dark mode</span>
+    </button>
+  </div>
+
   <main>
     <h1 class="visually-hidden">Life Dashboard</h1>
 
@@ -20,6 +28,17 @@
     <section id="clock-widget" aria-label="Clock and Greeting">
       <h2 class="widget-title">Clock</h2>
       <div id="greeting-text" aria-live="polite"></div>
+      <!-- Name customisation -->
+      <div id="name-row">
+        <span id="name-display"></span>
+        <button id="name-edit-btn" type="button" aria-label="Edit your name">✏️</button>
+        <form id="name-form" hidden novalidate>
+          <label for="name-input" class="visually-hidden">Your name</label>
+          <input id="name-input" type="text" placeholder="Your name…" autocomplete="off" maxlength="40" />
+          <button type="submit" aria-label="Save name">Save</button>
+          <button type="button" id="name-cancel-btn" aria-label="Cancel name edit">Cancel</button>
+        </form>
+      </div>
       <time id="clock-time" aria-live="polite"></time>
       <div id="clock-date" aria-live="polite"></div>
     </section>
@@ -50,6 +69,15 @@
         <button type="submit" aria-label="Add new task">Add</button>
       </form>
       <p id="todo-error" role="alert" aria-live="assertive"></p>
+      <!-- Sort controls -->
+      <div id="todo-sort-row" aria-label="Sort tasks">
+        <label for="todo-sort" class="sort-label">Sort:</label>
+        <select id="todo-sort" aria-label="Sort tasks by">
+          <option value="added">Date added</option>
+          <option value="alpha">A → Z</option>
+          <option value="status">Incomplete first</option>
+        </select>
+      </div>
       <ul id="todo-list" aria-label="Task list"></ul>
     </section>
 

@@ -135,6 +135,7 @@ var LinksModule = {
       container.appendChild(deleteBtn);
     }
   },
+
   // ---------------------------------------------------------------------------
   // addLink — validate, create, persist, re-render
   // Returns true on success, false on validation failure.

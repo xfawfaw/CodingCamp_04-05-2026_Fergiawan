@@ -57,9 +57,51 @@
   };
 
   // ---------------------------------------------------------------------------
-  // GreetingModule — maps hour (0–23) to a greeting string
+  // ThemeModule — light / dark mode toggle, persisted to localStorage
+  // ---------------------------------------------------------------------------
+  var ThemeModule = {
+    _key: 'tdl_theme',
+
+    init: function () {
+      var saved = StorageModule.get(this._key);
+      // Also respect OS preference when no saved preference exists
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var isDark = saved !== null ? saved === 'dark' : prefersDark;
+      this._apply(isDark);
+
+      var self = this;
+      var btn = document.getElementById('theme-toggle');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          self.toggle();
+        });
+      }
+    },
+
+    toggle: function () {
+      var isDark = document.body.getAttribute('data-theme') === 'dark';
+      this._apply(!isDark);
+      StorageModule.set(this._key, !isDark ? 'dark' : 'light');
+    },
+
+    _apply: function (isDark) {
+      document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      var btn = document.getElementById('theme-toggle');
+      var icon = document.getElementById('theme-icon');
+      var label = document.getElementById('theme-label');
+      if (btn) { btn.setAttribute('aria-pressed', String(isDark)); }
+      if (icon) { icon.textContent = isDark ? '☀️' : '🌙'; }
+      if (label) { label.textContent = isDark ? 'Light mode' : 'Dark mode'; }
+      if (btn) { btn.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode'); }
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // GreetingModule — maps hour (0–23) to a greeting string, supports custom name
   // ---------------------------------------------------------------------------
   var GreetingModule = {
+    _nameKey: 'tdl_name',
+
     // Pure function: maps hour (0–23) to a greeting string.
     // 05–11 → Good Morning, 12–17 → Good Afternoon,
     // 18–20 → Good Evening, 21–23 and 0–4 → Good Night
@@ -76,12 +118,77 @@
       return 'Good Night';
     },
 
-    // Writes the greeting for the given hour to #greeting-text
+    // Returns the stored name, or empty string if none set
+    getName: function () {
+      var name = StorageModule.get(this._nameKey);
+      return typeof name === 'string' ? name : '';
+    },
+
+    // Writes the greeting (+ optional name) to #greeting-text
     update: function (hour) {
       var el = document.getElementById('greeting-text');
-      if (el) {
-        el.textContent = GreetingModule.getGreeting(hour);
+      if (!el) { return; }
+      var greeting = this.getGreeting(hour);
+      var name = this.getName();
+      el.textContent = name ? greeting + ', ' + name + '!' : greeting;
+    },
+
+    // Initialise the name UI (display + edit form)
+    initNameUI: function () {
+      var self = this;
+      this._renderName();
+
+      var editBtn    = document.getElementById('name-edit-btn');
+      var cancelBtn  = document.getElementById('name-cancel-btn');
+      var nameForm   = document.getElementById('name-form');
+      var nameInput  = document.getElementById('name-input');
+
+      if (editBtn) {
+        editBtn.addEventListener('click', function () {
+          var current = self.getName();
+          if (nameInput) { nameInput.value = current; }
+          if (nameForm)  { nameForm.removeAttribute('hidden'); }
+          if (editBtn)   { editBtn.setAttribute('hidden', ''); }
+          if (nameInput) { nameInput.focus(); }
+        });
       }
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', function () {
+          self._closeForm();
+        });
+      }
+
+      if (nameForm) {
+        nameForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          var val = nameInput ? nameInput.value.trim() : '';
+          // Empty value clears the name
+          StorageModule.set(self._nameKey, val);
+          self._renderName();
+          self._closeForm();
+          // Immediately refresh greeting with new name
+          var now = new Date();
+          if (!isNaN(now.getTime())) {
+            self.update(now.getHours());
+          }
+        });
+      }
+    },
+
+    _renderName: function () {
+      var nameDisplay = document.getElementById('name-display');
+      var name = this.getName();
+      if (nameDisplay) {
+        nameDisplay.textContent = name ? 'Hi, ' + name : 'Set your name';
+      }
+    },
+
+    _closeForm: function () {
+      var nameForm  = document.getElementById('name-form');
+      var editBtn   = document.getElementById('name-edit-btn');
+      if (nameForm) { nameForm.setAttribute('hidden', ''); }
+      if (editBtn)  { editBtn.removeAttribute('hidden'); }
     }
   };
 
@@ -103,7 +210,6 @@
 
         try {
           date = new Date();
-          // isNaN on a Date object checks if the underlying time value is NaN
           isValid = !isNaN(date.getTime());
         } catch (e) {
           isValid = false;
@@ -150,7 +256,7 @@
     intervalId: null,
     running: false,
 
-    // Task 3.2: Pure function — converts seconds (0–1500) to zero-padded "MM:SS"
+    // Pure function — converts seconds (0–5999) to zero-padded "MM:SS"
     formatTime: function (seconds) {
       var mm = Math.floor(seconds / 60);
       var ss = seconds % 60;
@@ -173,7 +279,7 @@
       }
     },
 
-    // Task 3.4: Stop — clear interval, update state and buttons
+    // Stop — clear interval, update state and buttons
     stop: function () {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -181,7 +287,7 @@
       this.updateButtons();
     },
 
-    // Task 3.3: Start — create interval, update state and buttons
+    // Start — create interval, update state and buttons
     start: function () {
       var self = this;
       this.running = true;
@@ -191,7 +297,7 @@
       }, 1000);
     },
 
-    // Task 3.6: Countdown tick — decrement, re-render; alert and stop at 0
+    // Countdown tick — decrement, re-render; alert and stop at 0
     tick: function () {
       this.remaining -= 1;
       this.renderDisplay();
@@ -201,29 +307,27 @@
       }
     },
 
-    // Task 3.5: Reset — stop, restore remaining, re-render, update buttons
+    // Reset — stop, restore to configured duration, re-render, update buttons
     reset: function () {
       this.stop();
-      this.remaining = 1500;
+      this.remaining = this._duration;
       this.renderDisplay();
       this.updateButtons();
     },
 
-    // Task 3.1: init — set up state, render initial display, wire button handlers
+    // init — set up state, render initial display, wire button handlers
     init: function (containerEl) { // eslint-disable-line no-unused-vars
-      // Reset to initial state
-      this.remaining = 1500;
+      this._duration = 1500; // default 25 min
+      this.remaining = this._duration;
       this.intervalId = null;
       this.running = false;
 
-      // Render initial "25:00"
       this.renderDisplay();
 
-      // Wire up button click handlers
       var self = this;
-      var startBtn  = document.getElementById('timer-start');
-      var stopBtn   = document.getElementById('timer-stop');
-      var resetBtn  = document.getElementById('timer-reset');
+      var startBtn = document.getElementById('timer-start');
+      var stopBtn  = document.getElementById('timer-stop');
+      var resetBtn = document.getElementById('timer-reset');
 
       if (startBtn) {
         startBtn.addEventListener('click', function () { self.start(); });
@@ -235,7 +339,6 @@
         resetBtn.addEventListener('click', function () { self.reset(); });
       }
 
-      // Ensure button states match initial running=false
       this.updateButtons();
     }
   };
@@ -245,15 +348,23 @@
   // ---------------------------------------------------------------------------
   var TodoModule = {
     tasks: [],
+    _sortKey: 'tdl_sort',
 
-    // Task 4.1: Load tasks from storage, wire form, render
+    // Load tasks from storage, wire form, render
     init: function (containerEl) { // eslint-disable-line no-unused-vars
       var stored = StorageModule.get('tdl_tasks');
       this.tasks = Array.isArray(stored) ? stored : [];
 
+      // Restore saved sort preference
+      var savedSort = StorageModule.get(this._sortKey);
+      var sortSelect = document.getElementById('todo-sort');
+      if (sortSelect && savedSort) {
+        sortSelect.value = savedSort;
+      }
+
       // Wire form submit handler
       var self = this;
-      var form = document.getElementById('todo-form');
+      var form  = document.getElementById('todo-form');
       var input = document.getElementById('todo-input');
       if (form) {
         form.addEventListener('submit', function (e) {
@@ -266,7 +377,15 @@
         });
       }
 
-      // Task 4.3: Event delegation on #todo-list for checkbox/edit/delete/save/cancel
+      // Wire sort select
+      if (sortSelect) {
+        sortSelect.addEventListener('change', function () {
+          StorageModule.set(self._sortKey, sortSelect.value);
+          self.renderAll();
+        });
+      }
+
+      // Event delegation on #todo-list for checkbox/edit/delete/save/cancel
       var list = document.getElementById('todo-list');
       if (list) {
         list.addEventListener('click', function (e) {
@@ -276,10 +395,7 @@
           var id = li.getAttribute('data-id');
 
           if (target.type === 'checkbox') {
-            // toggleTask will be implemented in task 6
-            if (typeof self.toggleTask === 'function') {
-              self.toggleTask(id);
-            }
+            self.toggleTask(id);
           } else if (target.classList.contains('btn-edit')) {
             self.startEdit(id);
           } else if (target.classList.contains('btn-save')) {
@@ -289,10 +405,7 @@
           } else if (target.classList.contains('btn-cancel')) {
             self.renderAll();
           } else if (target.classList.contains('btn-delete')) {
-            // deleteTask will be implemented in task 6
-            if (typeof self.deleteTask === 'function') {
-              self.deleteTask(id);
-            }
+            self.deleteTask(id);
           }
         });
       }
@@ -300,7 +413,28 @@
       this.renderAll();
     },
 
-    // Task 4.2: Validate, create, persist, re-render
+    // Returns the sorted copy of tasks based on current select value
+    _getSorted: function () {
+      var sortSelect = document.getElementById('todo-sort');
+      var mode = sortSelect ? sortSelect.value : 'added';
+      var copy = this.tasks.slice();
+
+      if (mode === 'alpha') {
+        copy.sort(function (a, b) {
+          return a.description.toLowerCase().localeCompare(b.description.toLowerCase());
+        });
+      } else if (mode === 'status') {
+        copy.sort(function (a, b) {
+          // incomplete (false) before complete (true)
+          return (a.completed === b.completed) ? 0 : a.completed ? 1 : -1;
+        });
+      }
+      // 'added' keeps insertion order (no sort needed)
+      return copy;
+    },
+
+    // Validate, create, persist, re-render
+    // Returns true on success, false on validation failure
     addTask: function (description) {
       var trimmed = typeof description === 'string' ? description.trim() : '';
       var errorEl = document.getElementById('todo-error');
@@ -310,6 +444,17 @@
           errorEl.textContent = 'Task description cannot be empty.';
         }
         return false;
+      }
+
+      // Prevent duplicate tasks (case-insensitive)
+      var lowerTrimmed = trimmed.toLowerCase();
+      for (var d = 0; d < this.tasks.length; d++) {
+        if (this.tasks[d].description.toLowerCase() === lowerTrimmed) {
+          if (errorEl) {
+            errorEl.textContent = 'That task already exists.';
+          }
+          return false;
+        }
       }
 
       // Clear any previous error
@@ -338,14 +483,13 @@
       return true;
     },
 
-    // Task 5.1: Switch a task item into inline edit mode
+    // Switch a task item into inline edit mode
     startEdit: function (id) {
       var list = document.getElementById('todo-list');
       if (!list) { return; }
       var li = list.querySelector('li[data-id="' + id + '"]');
       if (!li) { return; }
 
-      // Find the task's current description
       var task = null;
       for (var i = 0; i < this.tasks.length; i++) {
         if (this.tasks[i].id === id) {
@@ -355,21 +499,18 @@
       }
       if (!task) { return; }
 
-      // Hide label and Edit/Delete buttons
-      var label = li.querySelector('label');
-      var editBtn = li.querySelector('.btn-edit');
+      var label     = li.querySelector('label');
+      var editBtn   = li.querySelector('.btn-edit');
       var deleteBtn = li.querySelector('.btn-delete');
       if (label)     { label.style.display = 'none'; }
       if (editBtn)   { editBtn.style.display = 'none'; }
       if (deleteBtn) { deleteBtn.style.display = 'none'; }
 
-      // Insert edit input pre-filled with current description
       var input = document.createElement('input');
       input.type = 'text';
       input.className = 'edit-input';
       input.value = task.description;
 
-      // Insert Save and Cancel buttons
       var saveBtn = document.createElement('button');
       saveBtn.type = 'button';
       saveBtn.className = 'btn-save';
@@ -389,7 +530,7 @@
       input.focus();
     },
 
-    // Task 6.1: Flip completed boolean, persist, re-render
+    // Flip completed boolean, persist, re-render
     toggleTask: function (id) {
       for (var i = 0; i < this.tasks.length; i++) {
         if (this.tasks[i].id === id) {
@@ -401,24 +542,22 @@
       this.renderAll();
     },
 
-    // Task 6.2: Filter task from array, persist, re-render
+    // Filter task from array, persist, re-render
     deleteTask: function (id) {
       this.tasks = this.tasks.filter(function (t) { return t.id !== id; });
       StorageModule.set('tdl_tasks', this.tasks);
       this.renderAll();
     },
 
-    // Task 5.2: Validate and apply an edit to a task's description
+    // Validate and apply an edit to a task's description
     editTask: function (id, newDescription) {
       var trimmed = typeof newDescription === 'string' ? newDescription.trim() : '';
 
       if (trimmed.length === 0) {
-        // Reject empty/whitespace — restore display without modifying state
         this.renderAll();
         return;
       }
 
-      // Find and update the task
       for (var i = 0; i < this.tasks.length; i++) {
         if (this.tasks[i].id === id) {
           this.tasks[i].description = trimmed;
@@ -430,40 +569,38 @@
       this.renderAll();
     },
 
-    // Task 4.3: Clear and re-render all tasks
+    // Clear and re-render all tasks (respecting current sort)
     renderAll: function () {
       var list = document.getElementById('todo-list');
       if (!list) { return; }
 
       list.innerHTML = '';
 
-      for (var i = 0; i < this.tasks.length; i++) {
-        var task = this.tasks[i];
+      var sorted = this._getSorted();
+
+      for (var i = 0; i < sorted.length; i++) {
+        var task = sorted[i];
 
         var li = document.createElement('li');
         li.setAttribute('data-id', task.id);
 
-        // Checkbox
         var checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = task.completed === true;
         checkbox.setAttribute('aria-label', 'Mark task complete');
 
-        // Label
         var label = document.createElement('label');
         label.textContent = task.description;
         if (task.completed === true) {
           label.classList.add('completed');
         }
 
-        // Edit button
         var editBtn = document.createElement('button');
         editBtn.type = 'button';
         editBtn.className = 'btn-edit';
         editBtn.textContent = 'Edit';
         editBtn.setAttribute('aria-label', 'Edit task: ' + task.description);
 
-        // Delete button
         var deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn-delete';
@@ -486,12 +623,11 @@
   var LinksModule = {
     links: [],
 
-    // Task 7.1: Load links from storage, wire form, render
+    // Load links from storage, wire form, render
     init: function (containerEl) { // eslint-disable-line no-unused-vars
       var stored = StorageModule.get('tdl_links');
       this.links = Array.isArray(stored) ? stored : [];
 
-      // Wire form submit handler (addLink will be implemented in task 8)
       var self = this;
       var form = document.getElementById('links-form');
       if (form) {
@@ -501,17 +637,14 @@
           var urlInput   = document.getElementById('links-url-input');
           var label = labelInput ? labelInput.value : '';
           var url   = urlInput   ? urlInput.value   : '';
-          if (typeof self.addLink === 'function') {
-            var added = self.addLink(label, url);
-            if (added) {
-              if (labelInput) { labelInput.value = ''; }
-              if (urlInput)   { urlInput.value   = ''; }
-            }
+          var added = self.addLink(label, url);
+          if (added) {
+            if (labelInput) { labelInput.value = ''; }
+            if (urlInput)   { urlInput.value   = ''; }
           }
         });
       }
 
-      // Event delegation on #links-container for button clicks
       var container = document.getElementById('links-container');
       if (container) {
         container.addEventListener('click', function (e) {
@@ -521,7 +654,6 @@
           if (target.classList.contains('btn-delete-link')) {
             self.deleteLink(id);
           } else {
-            // Find the link and open it
             for (var i = 0; i < self.links.length; i++) {
               if (self.links[i].id === id) {
                 window.open(self.links[i].url, '_blank');
@@ -535,7 +667,7 @@
       this.renderAll();
     },
 
-    // Task 7.2: Clear container; render placeholder or link buttons
+    // Clear container; render placeholder or link buttons
     renderAll: function () {
       var container = document.getElementById('links-container');
       if (!container) { return; }
@@ -570,7 +702,7 @@
       }
     },
 
-    // Task 8.1: Validate, create, persist, re-render
+    // Validate, create, persist, re-render
     addLink: function (label, url) {
       var trimmedLabel = typeof label === 'string' ? label.trim() : '';
       var trimmedUrl   = typeof url   === 'string' ? url.trim()   : '';
@@ -586,10 +718,8 @@
         return false;
       }
 
-      // Clear any previous error
       if (errorEl) { errorEl.textContent = ''; }
 
-      // Generate id with crypto.randomUUID() fallback
       var id;
       try {
         id = crypto.randomUUID();
@@ -603,7 +733,7 @@
       return true;
     },
 
-    // Task 8.2: Filter link from array, persist, re-render
+    // Filter link from array, persist, re-render
     deleteLink: function (id) {
       this.links = this.links.filter(function (l) { return l.id !== id; });
       StorageModule.set('tdl_links', this.links);
@@ -617,6 +747,8 @@
   var App = {
     init: function () {
       StorageModule.init();
+      ThemeModule.init();
+      GreetingModule.initNameUI();
       ClockModule.init(document.getElementById('clock-widget'));
       TimerModule.init(document.getElementById('timer-widget'));
       TodoModule.init(document.getElementById('todo-widget'));
