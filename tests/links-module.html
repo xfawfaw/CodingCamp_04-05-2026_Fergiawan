@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinksModule Tests — To-Do Life Dashboard</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #6c757d; margin-top: 0; margin-bottom: 1.5rem; }
+    #summary {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    #summary.pass { background: #d1e7dd; color: #0a3622; }
+    #summary.fail { background: #f8d7da; color: #58151c; }
+    #summary.running { background: #fff3cd; color: #664d03; }
+    #results { list-style: none; padding: 0; margin: 0; }
+    #results li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+    }
+    #results li.pass { border-left: 4px solid #198754; }
+    #results li.fail { border-left: 4px solid #dc3545; }
+    .badge {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pass { background: #198754; color: #fff; }
+    .badge.fail { background: #dc3545; color: #fff; }
+    .test-name { font-weight: 600; }
+    .test-detail { color: #6c757d; font-size: 0.82rem; margin-top: 0.2rem; }
+    .test-error { color: #dc3545; font-size: 0.82rem; margin-top: 0.2rem; font-family: monospace; white-space: pre-wrap; }
+    .test-info { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+
+  <!--
+    Minimal DOM stubs required by LinksModule.
+    renderAll() guards against a missing #links-container, but having it here
+    lets the module render normally and keeps the test environment realistic.
+  -->
+  <div id="links-container" style="display:none;"></div>
+  <form id="links-form" style="display:none;">
+    <input id="links-label-input" type="text" />
+    <input id="links-url-input" type="url" />
+    <button type="submit">Add</button>
+  </form>
+  <span id="links-error" style="display:none;"></span>
+
+  <nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+    <a href="index.html" style="color:#0d6efd;text-decoration:none;">← StorageModule Tests</a>
+    &nbsp;|&nbsp;
+    <a href="todo-module.html" style="color:#0d6efd;text-decoration:none;">Todo Tests</a>
+    &nbsp;|&nbsp;
+    <a href="timer-module.html" style="color:#0d6efd;text-decoration:none;">Timer Tests</a>
+    &nbsp;|&nbsp;
+    <a href="clock-greeting.html" style="color:#0d6efd;text-decoration:none;">Clock &amp; Greeting Tests</a>
+  </nav>
+
+  <h1>LinksModule Tests</h1>
+  <p class="subtitle">To-Do Life Dashboard · Unit Tests</p>
+
+  <div id="summary" class="running">Running tests…</div>
+  <ul id="results"></ul>
+
+  <!-- LinksModule standalone with injectable storage -->
+  <script src="links-module.js"></script>
+
+  <!-- fast-check for property-based tests -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check@3/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Minimal test runner (same pattern as todo-module.html)
+     * ----------------------------------------------------------------------- */
+    var passed = 0;
+    var failed = 0;
+    var resultsList = document.getElementById('results');
+    var summaryEl   = document.getElementById('summary');
+
+    function recordResult(name, ok, detail, error) {
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (ok ? 'pass' : 'fail');
+      badge.textContent = ok ? 'PASS' : 'FAIL';
+
+      var info = document.createElement('div');
+      info.className = 'test-info';
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'test-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (detail) {
+        var detailEl = document.createElement('span');
+        detailEl.className = 'test-detail';
+        detailEl.textContent = detail;
+        info.appendChild(detailEl);
+      }
+
+      if (!ok && error) {
+        var errEl = document.createElement('span');
+        errEl.className = 'test-error';
+        errEl.textContent = error;
+        info.appendChild(errEl);
+      }
+
+      li.appendChild(badge);
+      li.appendChild(info);
+      resultsList.appendChild(li);
+
+      if (ok) { passed++; } else { failed++; }
+    }
+
+    function runTest(name, fn) {
+      try {
+        fn();
+        recordResult(name, true, null, null);
+      } catch (e) {
+        recordResult(name, false, null, e.message || String(e));
+      }
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message || 'Assertion failed');
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+     * Helper: create a fresh in-memory storage mock for each test
+     * ----------------------------------------------------------------------- */
+    function makeFreshStorage(initialData) {
+      return {
+        _store: initialData || {},
+        get: function (key) {
+          var val = this._store[key];
+          return val !== undefined ? val : null;
+        },
+        set: function (key, value) {
+          this._store[key] = JSON.parse(JSON.stringify(value));
+        }
+      };
+    }
+
+    /* -----------------------------------------------------------------------
+     * Helper: reset LinksModule to a clean state before each test
+     * ----------------------------------------------------------------------- */
+    function resetModule() {
+      LinksModule.links = [];
+      LinksModule._storage = makeFreshStorage();
+      // Clear the container DOM
+      var container = document.getElementById('links-container');
+      if (container) { container.innerHTML = ''; }
+      // Clear the error element
+      var errorEl = document.getElementById('links-error');
+      if (errorEl) { errorEl.textContent = ''; }
+    }
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 1: Placeholder shown when no links
+     *
+     * When init() is called with empty storage, #links-container should
+     * contain a <p> element with the placeholder text.
+     * ----------------------------------------------------------------------- */
+    runTest('Placeholder shown when no links', function () {
+      resetModule();
+
+      // Storage has no links (returns null)
+      var storage = makeFreshStorage({});
+      LinksModule.init(null, storage);
+
+      var container = document.getElementById('links-container');
+      var p = container.querySelector('p');
+
+      assert(p !== null, 'Expected a <p> placeholder element in #links-container');
+      assert(
+        p.textContent === 'No links yet. Add your first link above.',
+        'Expected placeholder text "No links yet. Add your first link above." but got: "' + p.textContent + '"'
+      );
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 2: Clicking a link button calls window.open with correct URL
+     *
+     * After adding a link to the module state and calling renderAll(), clicking
+     * the rendered button should call window.open(url, '_blank').
+     * ----------------------------------------------------------------------- */
+    runTest('Clicking a link button calls window.open with correct URL and \'_blank\'', function () {
+      resetModule();
+
+      // Seed the module with one link directly (bypassing addLink validation)
+      LinksModule.links = [{
+        id: 'test-id-1',
+        label: 'Example',
+        url: 'https://example.com'
+      }];
+      LinksModule.renderAll();
+
+      // Mock window.open
+      var openCalls = [];
+      var originalOpen = window.open;
+      window.open = function (url, target) {
+        openCalls.push({ url: url, target: target });
+      };
+
+      try {
+        var container = document.getElementById('links-container');
+        var btn = container.querySelector('button[data-id="test-id-1"]');
+
+        assert(btn !== null, 'Expected a <button> with data-id="test-id-1" in #links-container');
+
+        // Simulate a click on the button
+        btn.click();
+
+        assert(openCalls.length === 1, 'Expected window.open to be called once, got: ' + openCalls.length);
+        assert(
+          openCalls[0].url === 'https://example.com',
+          'Expected window.open URL to be "https://example.com" but got: "' + openCalls[0].url + '"'
+        );
+        assert(
+          openCalls[0].target === '_blank',
+          'Expected window.open target to be "_blank" but got: "' + openCalls[0].target + '"'
+        );
+      } finally {
+        // Restore window.open regardless of test outcome
+        window.open = originalOpen;
+      }
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 3: Links loaded from storage on init
+     *
+     * When storage is pre-populated with a link array, calling init() should
+     * load those links and render the corresponding buttons in #links-container.
+     * ----------------------------------------------------------------------- */
+    runTest('Links loaded from storage on init', function () {
+      resetModule();
+
+      var storedLinks = [
+        { id: 'stored-id-1', label: 'GitHub', url: 'https://github.com' },
+        { id: 'stored-id-2', label: 'MDN',    url: 'https://developer.mozilla.org' }
+      ];
+
+      // Pre-populate storage with the link array
+      var storage = makeFreshStorage({ tdl_links: storedLinks });
+      LinksModule.init(null, storage);
+
+      var container = document.getElementById('links-container');
+
+      // Both link buttons should be present
+      var btn1 = container.querySelector('button[data-id="stored-id-1"]');
+      var btn2 = container.querySelector('button[data-id="stored-id-2"]');
+
+      assert(btn1 !== null, 'Expected button for "GitHub" (stored-id-1) to be rendered');
+      assert(btn2 !== null, 'Expected button for "MDN" (stored-id-2) to be rendered');
+      assert(btn1.textContent === 'GitHub', 'Expected button label "GitHub" but got: "' + btn1.textContent + '"');
+      assert(btn2.textContent === 'MDN',    'Expected button label "MDN" but got: "' + btn2.textContent + '"');
+
+      // Module's in-memory state should also reflect the loaded links
+      assert(LinksModule.links.length === 2, 'Expected 2 links in module state, got: ' + LinksModule.links.length);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Update summary
+     * ----------------------------------------------------------------------- */
+    var total = passed + failed;
+    summaryEl.textContent = passed + ' / ' + total + ' tests passed' + (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+    summaryEl.className = failed > 0 ? 'fail' : 'pass';
+  </script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Property-Based Tests — Properties 9, 10, 11
+     * Uses fast-check (loaded via CDN above)
+     * ----------------------------------------------------------------------- */
+
+    // Shared arbitraries
+    var linkArb = fc.record({
+      id: fc.string(),
+      label: fc.string().filter(function (s) { return s.trim().length > 0; }),
+      url: fc.constantFrom('http://example.com', 'https://example.com')
+    });
+
+    var validUrlArb = fc.constantFrom(
+      'http://test.com',
+      'https://test.com',
+      'http://a.b',
+      'https://a.b'
+    );
+
+    var invalidUrlArb = fc.string().filter(function (s) {
+      return !s.startsWith('http://') && !s.startsWith('https://');
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 9: Valid link addition grows the link list
+     * Validates: Requirements 8.2
+     *
+     * For any link array and valid label (non-empty) + URL (starts with
+     * http:// or https://), addLink() increases count by 1.
+     * ----------------------------------------------------------------------- */
+    runTest('Property 9: Valid link addition grows the link list', function () {
+      fc.assert(
+        fc.property(
+          fc.array(linkArb),
+          fc.string({ minLength: 1 }).filter(function (s) { return s.trim().length > 0; }),
+          validUrlArb,
+          function (initialLinks, label, url) {
+            // Reset module with a fresh storage and the generated link array
+            LinksModule.links = JSON.parse(JSON.stringify(initialLinks));
+            LinksModule._storage = {
+              _store: {},
+              get: function (key) { return this._store[key] !== undefined ? this._store[key] : null; },
+              set: function (key, value) { this._store[key] = JSON.parse(JSON.stringify(value)); }
+            };
+
+            var countBefore = LinksModule.links.length;
+            var result = LinksModule.addLink(label, url);
+
+            if (!result) { return false; }
+            if (LinksModule.links.length !== countBefore + 1) { return false; }
+
+            // The new link should appear with the trimmed label and url
+            var trimmedLabel = label.trim();
+            var trimmedUrl   = url.trim();
+            var found = LinksModule.links.some(function (l) {
+              return l.label === trimmedLabel && l.url === trimmedUrl;
+            });
+            return found;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 10: Invalid URL is rejected
+     * Validates: Requirements 8.3
+     *
+     * For any URL not starting with http:// or https://, addLink() leaves
+     * the list unchanged.
+     * ----------------------------------------------------------------------- */
+    runTest('Property 10: Invalid URL is rejected', function () {
+      fc.assert(
+        fc.property(
+          fc.array(linkArb),
+          fc.string({ minLength: 1 }).filter(function (s) { return s.trim().length > 0; }),
+          invalidUrlArb,
+          function (initialLinks, label, url) {
+            LinksModule.links = JSON.parse(JSON.stringify(initialLinks));
+            LinksModule._storage = {
+              _store: {},
+              get: function (key) { return this._store[key] !== undefined ? this._store[key] : null; },
+              set: function (key, value) { this._store[key] = JSON.parse(JSON.stringify(value)); }
+            };
+
+            var countBefore = LinksModule.links.length;
+            var result = LinksModule.addLink(label, url);
+
+            // addLink must return false and leave the list unchanged
+            return result === false && LinksModule.links.length === countBefore;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 11: Deleted link is absent
+     * Validates: Requirements 8.5
+     *
+     * For any link array (minLength 1), after deleteLink(id), no link with
+     * that id remains.
+     * ----------------------------------------------------------------------- */
+    runTest('Property 11: Deleted link is absent', function () {
+      fc.assert(
+        fc.property(
+          fc.array(linkArb, { minLength: 1 }),
+          function (initialLinks) {
+            LinksModule.links = JSON.parse(JSON.stringify(initialLinks));
+            LinksModule._storage = {
+              _store: {},
+              get: function (key) { return this._store[key] !== undefined ? this._store[key] : null; },
+              set: function (key, value) { this._store[key] = JSON.parse(JSON.stringify(value)); }
+            };
+
+            // Pick the id of the first link to delete
+            var targetId = LinksModule.links[0].id;
+            LinksModule.deleteLink(targetId);
+
+            // No link with targetId should remain
+            return !LinksModule.links.some(function (l) { return l.id === targetId; });
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    /* -----------------------------------------------------------------------
+     * Update summary (after PBT tests)
+     * ----------------------------------------------------------------------- */
+    var totalAll = passed + failed;
+    summaryEl.textContent = passed + ' / ' + totalAll + ' tests passed' + (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+    summaryEl.className = failed > 0 ? 'fail' : 'pass';
+  </script>
+</body>
+</html>

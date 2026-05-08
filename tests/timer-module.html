@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TimerModule Tests — To-Do Life Dashboard</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #6c757d; margin-top: 0; margin-bottom: 1.5rem; }
+    #summary {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    #summary.pass { background: #d1e7dd; color: #0a3622; }
+    #summary.fail { background: #f8d7da; color: #58151c; }
+    #summary.running { background: #fff3cd; color: #664d03; }
+    #results { list-style: none; padding: 0; margin: 0; }
+    #results li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+    }
+    #results li.pass { border-left: 4px solid #198754; }
+    #results li.fail { border-left: 4px solid #dc3545; }
+    .badge {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pass { background: #198754; color: #fff; }
+    .badge.fail { background: #dc3545; color: #fff; }
+    .test-name { font-weight: 600; }
+    .test-detail { color: #6c757d; font-size: 0.82rem; margin-top: 0.2rem; }
+    .test-error { color: #dc3545; font-size: 0.82rem; margin-top: 0.2rem; font-family: monospace; white-space: pre-wrap; }
+    .test-info { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+
+  <!-- Minimal DOM stubs required by TimerModule (not exercised in pure-function tests) -->
+  <div id="timer-display">25:00</div>
+  <button id="timer-start">Start</button>
+  <button id="timer-stop" disabled>Stop</button>
+  <button id="timer-reset">Reset</button>
+
+  <nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+    <a href="index.html" style="color:#0d6efd;text-decoration:none;">← StorageModule Tests</a>
+    &nbsp;|&nbsp;
+    <a href="clock-greeting.html" style="color:#0d6efd;text-decoration:none;">Clock &amp; Greeting Tests →</a>
+  </nav>
+
+  <h1>TimerModule Tests</h1>
+  <p class="subtitle">To-Do Life Dashboard · Unit &amp; Property-Based Tests</p>
+
+  <div id="summary" class="running">Running tests…</div>
+  <ul id="results"></ul>
+
+  <!-- TimerModule standalone -->
+  <script src="timer-module.js"></script>
+
+  <!-- fast-check UMD bundle via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Minimal test runner
+     * ----------------------------------------------------------------------- */
+    var passed = 0;
+    var failed = 0;
+    var resultsList = document.getElementById('results');
+    var summaryEl   = document.getElementById('summary');
+
+    function recordResult(name, ok, detail, error) {
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (ok ? 'pass' : 'fail');
+      badge.textContent = ok ? 'PASS' : 'FAIL';
+
+      var info = document.createElement('div');
+      info.className = 'test-info';
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'test-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (detail) {
+        var detailEl = document.createElement('span');
+        detailEl.className = 'test-detail';
+        detailEl.textContent = detail;
+        info.appendChild(detailEl);
+      }
+
+      if (!ok && error) {
+        var errEl = document.createElement('span');
+        errEl.className = 'test-error';
+        errEl.textContent = error;
+        info.appendChild(errEl);
+      }
+
+      li.appendChild(badge);
+      li.appendChild(info);
+      resultsList.appendChild(li);
+
+      if (ok) { passed++; } else { failed++; }
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message || 'Assertion failed');
+      }
+    }
+
+    function runTest(name, fn) {
+      try {
+        fn();
+        recordResult(name, true, null, null);
+      } catch (e) {
+        recordResult(name, false, null, e.message || String(e));
+      }
+    }
+
+    function runAsyncTest(name, promise) {
+      return promise.then(function () {
+        recordResult(name, true, null, null);
+      }).catch(function (e) {
+        recordResult(name, false, null, e.message || String(e));
+      });
+    }
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 1: formatTime(1500) === "25:00"
+     * ----------------------------------------------------------------------- */
+    runTest('formatTime(1500) returns "25:00"', function () {
+      assert(TimerModule.formatTime(1500) === '25:00',
+        'Expected "25:00", got: ' + TimerModule.formatTime(1500));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 2: formatTime(0) === "00:00"
+     * ----------------------------------------------------------------------- */
+    runTest('formatTime(0) returns "00:00"', function () {
+      assert(TimerModule.formatTime(0) === '00:00',
+        'Expected "00:00", got: ' + TimerModule.formatTime(0));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 3: formatTime(90) === "01:30"
+     * ----------------------------------------------------------------------- */
+    runTest('formatTime(90) returns "01:30"', function () {
+      assert(TimerModule.formatTime(90) === '01:30',
+        'Expected "01:30", got: ' + TimerModule.formatTime(90));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 4: formatTime(60) === "01:00"
+     * ----------------------------------------------------------------------- */
+    runTest('formatTime(60) returns "01:00"', function () {
+      assert(TimerModule.formatTime(60) === '01:00',
+        'Expected "01:00", got: ' + TimerModule.formatTime(60));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 5: formatTime(59) === "00:59"
+     * ----------------------------------------------------------------------- */
+    runTest('formatTime(59) returns "00:59"', function () {
+      assert(TimerModule.formatTime(59) === '00:59',
+        'Expected "00:59", got: ' + TimerModule.formatTime(59));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 6: TimerModule initializes at 25:00
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule initializes at 25:00', function () {
+      TimerModule.init(null);
+      var display = document.getElementById('timer-display');
+      assert(TimerModule.remaining === 1500,
+        'Expected remaining===1500, got: ' + TimerModule.remaining);
+      assert(display.textContent === '25:00',
+        'Expected display "25:00", got: ' + display.textContent);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 7: TimerModule counts down by 1 after one tick
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule counts down by 1 after one tick', function () {
+      TimerModule.init(null);
+      TimerModule.tick();
+      var display = document.getElementById('timer-display');
+      assert(TimerModule.remaining === 1499,
+        'Expected remaining===1499, got: ' + TimerModule.remaining);
+      assert(display.textContent === '24:59',
+        'Expected display "24:59", got: ' + display.textContent);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 8: TimerModule Stop retains remaining
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule Stop retains remaining', function () {
+      TimerModule.init(null);
+      TimerModule.start();
+      TimerModule.remaining = 100;
+      TimerModule.stop();
+      assert(TimerModule.remaining === 100,
+        'Expected remaining===100, got: ' + TimerModule.remaining);
+      assert(TimerModule.running === false,
+        'Expected running===false, got: ' + TimerModule.running);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 9: TimerModule Reset restores 25:00
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule Reset restores 25:00', function () {
+      TimerModule.init(null);
+      TimerModule.remaining = 500;
+      TimerModule.reset();
+      var display = document.getElementById('timer-display');
+      assert(TimerModule.remaining === 1500,
+        'Expected remaining===1500, got: ' + TimerModule.remaining);
+      assert(display.textContent === '25:00',
+        'Expected display "25:00", got: ' + display.textContent);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 10: TimerModule alert fires at 00:00
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule alert fires at 00:00', function () {
+      TimerModule.init(null);
+      var alertCalled = false;
+      var originalAlert = window.alert;
+      window.alert = function () { alertCalled = true; };
+      TimerModule.remaining = 1;
+      TimerModule.tick();
+      window.alert = originalAlert;
+      assert(alertCalled === true,
+        'Expected window.alert to have been called');
+      assert(TimerModule.remaining === 0,
+        'Expected remaining===0, got: ' + TimerModule.remaining);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 11: TimerModule Start disables Start button and enables Stop button
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule Start disables Start button and enables Stop button', function () {
+      TimerModule.init(null);
+      TimerModule.start();
+      var startBtn = document.getElementById('timer-start');
+      var stopBtn  = document.getElementById('timer-stop');
+      var startDisabled = startBtn.disabled;
+      var stopDisabled  = stopBtn.disabled;
+      TimerModule.stop(); // cleanup interval
+      assert(startDisabled === true,
+        'Expected #timer-start.disabled===true, got: ' + startDisabled);
+      assert(stopDisabled === false,
+        'Expected #timer-stop.disabled===false, got: ' + stopDisabled);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 12: TimerModule Stop enables Start button and disables Stop button
+     * ----------------------------------------------------------------------- */
+    runTest('TimerModule Stop enables Start button and disables Stop button', function () {
+      TimerModule.init(null);
+      TimerModule.start();
+      TimerModule.stop();
+      var startBtn = document.getElementById('timer-start');
+      var stopBtn  = document.getElementById('timer-stop');
+      assert(startBtn.disabled === false,
+        'Expected #timer-start.disabled===false, got: ' + startBtn.disabled);
+      assert(stopBtn.disabled === true,
+        'Expected #timer-stop.disabled===true, got: ' + stopBtn.disabled);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 12: Timer display format
+     * For any remaining-seconds value in 0–1500, the timer display string SHALL
+     * match the pattern MM:SS where MM and SS are zero-padded two-digit numbers
+     * and the total seconds represented equals the input value.
+     * Validates: Requirements 3.3
+     * ----------------------------------------------------------------------- */
+    var mmssPattern = /^\d{2}:\d{2}$/;
+
+    var pbt12Promise = fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1500 }),
+        function (seconds) {
+          var result = TimerModule.formatTime(seconds);
+
+          // Must match MM:SS pattern
+          if (!mmssPattern.test(result)) { return false; }
+
+          var parts = result.split(':');
+          var mm = parseInt(parts[0], 10);
+          var ss = parseInt(parts[1], 10);
+
+          // Reconstructed total seconds must equal the input
+          if (mm * 60 + ss !== seconds) { return false; }
+
+          // MM must be exactly 2 characters (zero-padded)
+          if (parts[0].length !== 2) { return false; }
+
+          // SS must be exactly 2 characters (zero-padded)
+          if (parts[1].length !== 2) { return false; }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Collect async results and update summary
+     * ----------------------------------------------------------------------- */
+    runAsyncTest(
+      'Property 12: Timer display format — Validates: Requirements 3.3',
+      pbt12Promise
+    ).then(function () {
+      var total = passed + failed;
+      summaryEl.textContent = passed + ' / ' + total + ' tests passed' + (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+      summaryEl.className = failed > 0 ? 'fail' : 'pass';
+    });
+  </script>
+</body>
+</html>

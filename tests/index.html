@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StorageModule Tests — To-Do Life Dashboard</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #6c757d; margin-top: 0; margin-bottom: 1.5rem; }
+    #summary {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    #summary.pass { background: #d1e7dd; color: #0a3622; }
+    #summary.fail { background: #f8d7da; color: #58151c; }
+    #summary.running { background: #fff3cd; color: #664d03; }
+    #results { list-style: none; padding: 0; margin: 0; }
+    #results li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+    }
+    #results li.pass { border-left: 4px solid #198754; }
+    #results li.fail { border-left: 4px solid #dc3545; }
+    .badge {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pass { background: #198754; color: #fff; }
+    .badge.fail { background: #dc3545; color: #fff; }
+    .test-name { font-weight: 600; }
+    .test-detail { color: #6c757d; font-size: 0.82rem; margin-top: 0.2rem; }
+    .test-error { color: #dc3545; font-size: 0.82rem; margin-top: 0.2rem; font-family: monospace; white-space: pre-wrap; }
+    .test-info { display: flex; flex-direction: column; }
+
+    /* The storage-warning banner used by StorageModule — hidden by default */
+    #storage-warning {
+      background: #fff3cd;
+      color: #664d03;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Required DOM element for StorageModule warning banner tests -->
+  <div id="storage-warning" hidden>⚠️ Storage unavailable — changes will not be saved.</div>
+
+  <nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+    <a href="timer-module.html" style="color:#0d6efd;text-decoration:none;">Timer Tests →</a>
+    &nbsp;|&nbsp;
+    <a href="clock-greeting.html" style="color:#0d6efd;text-decoration:none;">Clock &amp; Greeting Tests →</a>
+    &nbsp;|&nbsp;
+    <a href="todo-module.html" style="color:#0d6efd;text-decoration:none;">Todo Tests →</a>
+  </nav>
+
+  <h1>StorageModule Tests</h1>
+  <p class="subtitle">To-Do Life Dashboard · Unit &amp; Property-Based Tests</p>
+
+  <div id="summary" class="running">Running tests…</div>
+  <ul id="results"></ul>
+
+  <!-- StorageModule standalone (not wrapped in IIFE) -->
+  <script src="storage-module.js"></script>
+
+  <!-- fast-check UMD bundle via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Minimal test runner
+     * ----------------------------------------------------------------------- */
+    var passed = 0;
+    var failed = 0;
+    var resultsList = document.getElementById('results');
+    var summaryEl   = document.getElementById('summary');
+
+    function recordResult(name, ok, detail, error) {
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (ok ? 'pass' : 'fail');
+      badge.textContent = ok ? 'PASS' : 'FAIL';
+
+      var info = document.createElement('div');
+      info.className = 'test-info';
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'test-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (detail) {
+        var detailEl = document.createElement('span');
+        detailEl.className = 'test-detail';
+        detailEl.textContent = detail;
+        info.appendChild(detailEl);
+      }
+
+      if (!ok && error) {
+        var errEl = document.createElement('span');
+        errEl.className = 'test-error';
+        errEl.textContent = error;
+        info.appendChild(errEl);
+      }
+
+      li.appendChild(badge);
+      li.appendChild(info);
+      resultsList.appendChild(li);
+
+      if (ok) { passed++; } else { failed++; }
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message || 'Assertion failed');
+      }
+    }
+
+    function deepEqual(a, b) {
+      return JSON.stringify(a) === JSON.stringify(b);
+    }
+
+    function runTest(name, fn) {
+      try {
+        fn();
+        recordResult(name, true, null, null);
+      } catch (e) {
+        recordResult(name, false, null, e.message || String(e));
+      }
+    }
+
+    function runAsyncTest(name, promise) {
+      return promise.then(function () {
+        recordResult(name, true, null, null);
+      }).catch(function (e) {
+        recordResult(name, false, null, e.message || String(e));
+      });
+    }
+
+    /* -----------------------------------------------------------------------
+     * Helpers
+     * ----------------------------------------------------------------------- */
+
+    /** Reset StorageModule internal state between tests */
+    function resetStorageModule() {
+      StorageModule._degraded = false;
+      // Restore real localStorage if it was replaced
+      if (StorageModule._realLocalStorage) {
+        Object.defineProperty(window, 'localStorage', {
+          value: StorageModule._realLocalStorage,
+          writable: true,
+          configurable: true
+        });
+        delete StorageModule._realLocalStorage;
+      }
+    }
+
+    /** Restore the #storage-warning banner to its default hidden state */
+    function resetWarningBanner() {
+      var banner = document.getElementById('storage-warning');
+      if (banner) {
+        banner.setAttribute('hidden', '');
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 1: round-trip set then get returns equivalent value
+     * ----------------------------------------------------------------------- */
+    runTest('StorageModule round-trip: set then get returns equivalent value', function () {
+      resetStorageModule();
+      var key = '__test_roundtrip__';
+      var value = { id: 'abc', description: 'Buy milk', completed: false, createdAt: 1700000000000 };
+
+      StorageModule.set(key, value);
+      var result = StorageModule.get(key);
+
+      assert(result !== null, 'Expected non-null result after set');
+      assert(deepEqual(result, value), 'Expected round-trip value to deeply equal original. Got: ' + JSON.stringify(result));
+
+      // Cleanup
+      localStorage.removeItem(key);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 2: corrupt JSON returns null
+     * ----------------------------------------------------------------------- */
+    runTest('StorageModule corrupt JSON returns null', function () {
+      resetStorageModule();
+      var key = '__test_corrupt__';
+
+      // Manually write corrupt JSON directly to localStorage
+      localStorage.setItem(key, '{this is not valid json!!!}');
+
+      var result = StorageModule.get(key);
+      assert(result === null, 'Expected null for corrupt JSON, got: ' + JSON.stringify(result));
+
+      // Cleanup
+      localStorage.removeItem(key);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test 3: unavailable storage shows warning banner
+     * ----------------------------------------------------------------------- */
+    runTest('StorageModule unavailable storage shows warning banner', function () {
+      resetStorageModule();
+      resetWarningBanner();
+
+      // Verify banner starts hidden
+      var banner = document.getElementById('storage-warning');
+      assert(banner !== null, '#storage-warning element must exist in the DOM');
+      assert(banner.hasAttribute('hidden'), 'Banner should start with hidden attribute');
+
+      // Mock localStorage to throw on setItem (simulates unavailable storage)
+      var mockLocalStorage = {
+        setItem: function () { throw new DOMException('QuotaExceededError'); },
+        getItem: function () { return null; },
+        removeItem: function () {}
+      };
+
+      // Save real localStorage and replace with mock
+      StorageModule._realLocalStorage = window.localStorage;
+      Object.defineProperty(window, 'localStorage', {
+        value: mockLocalStorage,
+        writable: true,
+        configurable: true
+      });
+
+      // Call init — should detect unavailable storage and show warning
+      StorageModule.init();
+
+      // Verify banner is now visible (hidden attribute removed)
+      assert(!banner.hasAttribute('hidden'), 'Expected #storage-warning hidden attribute to be removed after init() with unavailable storage');
+
+      // Restore
+      resetStorageModule();
+      resetWarningBanner();
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 4: Task persistence round-trip
+     * Validates: Requirements 4.4, 4.5, 9.2, 9.3
+     * ----------------------------------------------------------------------- */
+    var taskArb = fc.record({
+      id:          fc.string(),
+      description: fc.string(),
+      completed:   fc.boolean(),
+      createdAt:   fc.integer()
+    });
+
+    var pbt4Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb),
+        function (tasks) {
+          var key = '__test_pbt4__';
+          StorageModule.set(key, tasks);
+          var result = StorageModule.get(key);
+          localStorage.removeItem(key);
+
+          // Result must be an array of the same length with equivalent entries
+          if (!Array.isArray(result)) { return false; }
+          if (result.length !== tasks.length) { return false; }
+          for (var i = 0; i < tasks.length; i++) {
+            if (result[i].id          !== tasks[i].id)          { return false; }
+            if (result[i].description !== tasks[i].description) { return false; }
+            if (result[i].completed   !== tasks[i].completed)   { return false; }
+            if (result[i].createdAt   !== tasks[i].createdAt)   { return false; }
+          }
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Collect async results and update summary
+     * ----------------------------------------------------------------------- */
+    runAsyncTest(
+      'Property 4: Task persistence round-trip — Validates: Requirements 4.4, 4.5, 9.2, 9.3',
+      pbt4Promise
+    ).then(function () {
+      // All tests done — update summary
+      var total = passed + failed;
+      summaryEl.textContent = passed + ' / ' + total + ' tests passed' + (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+      summaryEl.className = failed > 0 ? 'fail' : 'pass';
+    });
+  </script>
+</body>
+</html>

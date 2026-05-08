@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clock &amp; Greeting Tests — To-Do Life Dashboard</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #6c757d; margin-top: 0; margin-bottom: 1.5rem; }
+    nav { margin-bottom: 1.5rem; font-size: 0.9rem; }
+    nav a { color: #0d6efd; text-decoration: none; }
+    nav a:hover { text-decoration: underline; }
+    #summary {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    #summary.pass { background: #d1e7dd; color: #0a3622; }
+    #summary.fail { background: #f8d7da; color: #58151c; }
+    #summary.running { background: #fff3cd; color: #664d03; }
+    #results { list-style: none; padding: 0; margin: 0; }
+    #results li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+    }
+    #results li.pass { border-left: 4px solid #198754; }
+    #results li.fail { border-left: 4px solid #dc3545; }
+    .badge {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pass { background: #198754; color: #fff; }
+    .badge.fail { background: #dc3545; color: #fff; }
+    .test-name { font-weight: 600; }
+    .test-detail { color: #6c757d; font-size: 0.82rem; margin-top: 0.2rem; }
+    .test-error { color: #dc3545; font-size: 0.82rem; margin-top: 0.2rem; font-family: monospace; white-space: pre-wrap; }
+    .test-info { display: flex; flex-direction: column; }
+
+    /* Hidden DOM elements used by ClockModule / GreetingModule during tests */
+    #test-dom { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <a href="index.html">← StorageModule Tests</a>
+  </nav>
+
+  <h1>Clock &amp; Greeting Tests</h1>
+  <p class="subtitle">To-Do Life Dashboard · Unit &amp; Property-Based Tests</p>
+
+  <div id="summary" class="running">Running tests…</div>
+  <ul id="results"></ul>
+
+  <!--
+    Hidden DOM elements required by ClockModule and GreetingModule.
+    ClockModule targets these by id; they must exist in the document.
+  -->
+  <div id="test-dom" aria-hidden="true">
+    <span id="clock-time"></span>
+    <span id="clock-date"></span>
+    <span id="greeting-text"></span>
+  </div>
+
+  <!-- GreetingModule standalone global -->
+  <script src="greeting-module.js"></script>
+
+  <!-- ClockModule standalone global (depends on GreetingModule) -->
+  <script src="clock-module.js"></script>
+
+  <!-- fast-check UMD bundle via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Minimal test runner (same pattern as tests/index.html)
+     * ----------------------------------------------------------------------- */
+    var passed = 0;
+    var failed = 0;
+    var resultsList = document.getElementById('results');
+    var summaryEl   = document.getElementById('summary');
+
+    function recordResult(name, ok, detail, error) {
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (ok ? 'pass' : 'fail');
+      badge.textContent = ok ? 'PASS' : 'FAIL';
+
+      var info = document.createElement('div');
+      info.className = 'test-info';
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'test-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (detail) {
+        var detailEl = document.createElement('span');
+        detailEl.className = 'test-detail';
+        detailEl.textContent = detail;
+        info.appendChild(detailEl);
+      }
+
+      if (!ok && error) {
+        var errEl = document.createElement('span');
+        errEl.className = 'test-error';
+        errEl.textContent = error;
+        info.appendChild(errEl);
+      }
+
+      li.appendChild(badge);
+      li.appendChild(info);
+      resultsList.appendChild(li);
+
+      if (ok) { passed++; } else { failed++; }
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message || 'Assertion failed');
+      }
+    }
+
+    function runTest(name, fn) {
+      try {
+        fn();
+        recordResult(name, true, null, null);
+      } catch (e) {
+        recordResult(name, false, null, e.message || String(e));
+      }
+    }
+
+    function runAsyncTest(name, promise) {
+      return promise.then(function () {
+        recordResult(name, true, null, null);
+      }).catch(function (e) {
+        recordResult(name, false, null, e.message || String(e));
+      });
+    }
+
+    /* -----------------------------------------------------------------------
+     * Unit Tests — GreetingModule.getGreeting boundary hours
+     * ----------------------------------------------------------------------- */
+
+    // Boundary hour 5 — first hour of "Good Morning"
+    runTest("getGreeting(5) returns 'Good Morning'", function () {
+      assert(GreetingModule.getGreeting(5) === 'Good Morning',
+        "Expected 'Good Morning' for hour 5, got: " + GreetingModule.getGreeting(5));
+    });
+
+    // Boundary hour 12 — first hour of "Good Afternoon"
+    runTest("getGreeting(12) returns 'Good Afternoon'", function () {
+      assert(GreetingModule.getGreeting(12) === 'Good Afternoon',
+        "Expected 'Good Afternoon' for hour 12, got: " + GreetingModule.getGreeting(12));
+    });
+
+    // Boundary hour 18 — first hour of "Good Evening"
+    runTest("getGreeting(18) returns 'Good Evening'", function () {
+      assert(GreetingModule.getGreeting(18) === 'Good Evening',
+        "Expected 'Good Evening' for hour 18, got: " + GreetingModule.getGreeting(18));
+    });
+
+    // Boundary hour 21 — first hour of "Good Night" (late range)
+    runTest("getGreeting(21) returns 'Good Night'", function () {
+      assert(GreetingModule.getGreeting(21) === 'Good Night',
+        "Expected 'Good Night' for hour 21, got: " + GreetingModule.getGreeting(21));
+    });
+
+    // Midnight — "Good Night"
+    runTest("getGreeting(0) returns 'Good Night'", function () {
+      assert(GreetingModule.getGreeting(0) === 'Good Night',
+        "Expected 'Good Night' for hour 0, got: " + GreetingModule.getGreeting(0));
+    });
+
+    // Late night boundary — last hour before morning
+    runTest("getGreeting(4) returns 'Good Night'", function () {
+      assert(GreetingModule.getGreeting(4) === 'Good Night',
+        "Expected 'Good Night' for hour 4, got: " + GreetingModule.getGreeting(4));
+    });
+
+    // Morning boundary — last hour of "Good Morning"
+    runTest("getGreeting(11) returns 'Good Morning'", function () {
+      assert(GreetingModule.getGreeting(11) === 'Good Morning',
+        "Expected 'Good Morning' for hour 11, got: " + GreetingModule.getGreeting(11));
+    });
+
+    // Afternoon boundary — last hour of "Good Afternoon"
+    runTest("getGreeting(17) returns 'Good Afternoon'", function () {
+      assert(GreetingModule.getGreeting(17) === 'Good Afternoon',
+        "Expected 'Good Afternoon' for hour 17, got: " + GreetingModule.getGreeting(17));
+    });
+
+    // Evening boundary — last hour of "Good Evening"
+    runTest("getGreeting(20) returns 'Good Evening'", function () {
+      assert(GreetingModule.getGreeting(20) === 'Good Evening',
+        "Expected 'Good Evening' for hour 20, got: " + GreetingModule.getGreeting(20));
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test — GreetingModule.update(hour) writes greeting to #greeting-text
+     * ----------------------------------------------------------------------- */
+    runTest("GreetingModule.update(hour) writes greeting to #greeting-text", function () {
+      var el = document.getElementById('greeting-text');
+      assert(el !== null, '#greeting-text element must exist in the DOM');
+
+      // Test each greeting via update()
+      GreetingModule.update(8);
+      assert(el.textContent === 'Good Morning',
+        "Expected 'Good Morning' after update(8), got: " + el.textContent);
+
+      GreetingModule.update(14);
+      assert(el.textContent === 'Good Afternoon',
+        "Expected 'Good Afternoon' after update(14), got: " + el.textContent);
+
+      GreetingModule.update(19);
+      assert(el.textContent === 'Good Evening',
+        "Expected 'Good Evening' after update(19), got: " + el.textContent);
+
+      GreetingModule.update(23);
+      assert(el.textContent === 'Good Night',
+        "Expected 'Good Night' after update(23), got: " + el.textContent);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Unit Test — ClockModule: displays "Time unavailable" when Date throws
+     *
+     * Strategy: replace the global Date constructor with one that throws,
+     * call ClockModule.init(), verify #clock-time shows "Time unavailable",
+     * then restore the real Date.
+     * ----------------------------------------------------------------------- */
+    runTest("ClockModule: displays 'Time unavailable' when Date throws", function () {
+      var timeEl = document.getElementById('clock-time');
+      assert(timeEl !== null, '#clock-time element must exist in the DOM');
+
+      // Save the real Date constructor
+      var RealDate = window.Date;
+
+      // Replace Date with a constructor that always throws
+      window.Date = function () {
+        throw new Error('Date constructor mocked to throw');
+      };
+
+      var clockHandle;
+      try {
+        // init() calls tick() immediately; tick() will catch the Date error
+        clockHandle = ClockModule.init(null);
+        assert(
+          timeEl.textContent === 'Time unavailable',
+          "Expected #clock-time to show 'Time unavailable', got: '" + timeEl.textContent + "'"
+        );
+      } finally {
+        // Always restore the real Date and stop the interval
+        window.Date = RealDate;
+        if (clockHandle && clockHandle.stop) {
+          clockHandle.stop();
+        }
+      }
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 1: Greeting boundary coverage and consistency
+     * Validates: Requirements 2.1, 2.2, 2.3, 2.4
+     *
+     * For any integer 0–23:
+     *   (a) getGreeting(hour) returns exactly one of the four valid strings
+     *   (b) getGreeting(hour) called twice returns the same string (pure/deterministic)
+     * Minimum 100 iterations via fast-check.
+     * ----------------------------------------------------------------------- */
+    var validGreetings = ['Good Morning', 'Good Afternoon', 'Good Evening', 'Good Night'];
+
+    var pbt1Promise = fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 23 }),
+        function (hour) {
+          var result1 = GreetingModule.getGreeting(hour);
+          var result2 = GreetingModule.getGreeting(hour);
+
+          // (a) Must be one of the four valid greeting strings
+          if (validGreetings.indexOf(result1) === -1) {
+            throw new Error(
+              'getGreeting(' + hour + ') returned unexpected value: "' + result1 + '"'
+            );
+          }
+
+          // (b) Must be deterministic — same input yields same output
+          if (result1 !== result2) {
+            throw new Error(
+              'getGreeting(' + hour + ') is not deterministic: first call returned "' +
+              result1 + '", second call returned "' + result2 + '"'
+            );
+          }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Collect async results and update summary
+     * ----------------------------------------------------------------------- */
+    runAsyncTest(
+      'Property 1: Greeting boundary coverage and consistency — Validates: Requirements 2.1, 2.2, 2.3, 2.4',
+      pbt1Promise
+    ).then(function () {
+      // All tests done — update summary
+      var total = passed + failed;
+      summaryEl.textContent =
+        passed + ' / ' + total + ' tests passed' +
+        (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+      summaryEl.className = failed > 0 ? 'fail' : 'pass';
+    });
+  </script>
+</body>
+</html>

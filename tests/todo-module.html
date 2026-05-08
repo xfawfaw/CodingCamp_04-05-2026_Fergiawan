@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TodoModule Tests — To-Do Life Dashboard</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #6c757d; margin-top: 0; margin-bottom: 1.5rem; }
+    #summary {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    #summary.pass { background: #d1e7dd; color: #0a3622; }
+    #summary.fail { background: #f8d7da; color: #58151c; }
+    #summary.running { background: #fff3cd; color: #664d03; }
+    #results { list-style: none; padding: 0; margin: 0; }
+    #results li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+    }
+    #results li.pass { border-left: 4px solid #198754; }
+    #results li.fail { border-left: 4px solid #dc3545; }
+    .badge {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pass { background: #198754; color: #fff; }
+    .badge.fail { background: #dc3545; color: #fff; }
+    .test-name { font-weight: 600; }
+    .test-detail { color: #6c757d; font-size: 0.82rem; margin-top: 0.2rem; }
+    .test-error { color: #dc3545; font-size: 0.82rem; margin-top: 0.2rem; font-family: monospace; white-space: pre-wrap; }
+    .test-info { display: flex; flex-direction: column; }
+    .note {
+      background: #e7f1ff;
+      border: 1px solid #b6d4fe;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      margin-bottom: 1rem;
+      font-size: 0.88rem;
+      color: #084298;
+    }
+  </style>
+</head>
+<body>
+
+  <!--
+    Minimal DOM stubs required by TodoModule.
+    renderAll() guards against a missing #todo-list, but having it here lets
+    the module render normally and keeps the test environment realistic.
+  -->
+  <ul id="todo-list" style="display:none;"></ul>
+  <form id="todo-form" style="display:none;">
+    <input id="todo-input" type="text" />
+    <button type="submit">Add</button>
+  </form>
+  <span id="todo-error" style="display:none;"></span>
+
+  <nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+    <a href="index.html" style="color:#0d6efd;text-decoration:none;">← StorageModule Tests</a>
+    &nbsp;|&nbsp;
+    <a href="timer-module.html" style="color:#0d6efd;text-decoration:none;">Timer Tests</a>
+    &nbsp;|&nbsp;
+    <a href="clock-greeting.html" style="color:#0d6efd;text-decoration:none;">Clock &amp; Greeting Tests</a>
+  </nav>
+
+  <h1>TodoModule Tests</h1>
+  <p class="subtitle">To-Do Life Dashboard · Property-Based Tests</p>
+
+  <div class="note">
+    ℹ️ <strong>Property 4 (task persistence round-trip)</strong> is covered in
+    <a href="index.html">tests/index.html</a> — it tests <code>StorageModule</code>
+    directly and is not duplicated here.
+  </div>
+
+  <div id="summary" class="running">Running tests…</div>
+  <ul id="results"></ul>
+
+  <!-- StorageModule standalone (used for reference; not exercised in these tests) -->
+  <script src="storage-module.js"></script>
+
+  <!-- TodoModule standalone with injectable storage -->
+  <script src="todo-module.js"></script>
+
+  <!-- fast-check UMD bundle via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+    /* -----------------------------------------------------------------------
+     * Minimal test runner (same pattern as index.html / timer-module.html)
+     * ----------------------------------------------------------------------- */
+    var passed = 0;
+    var failed = 0;
+    var resultsList = document.getElementById('results');
+    var summaryEl   = document.getElementById('summary');
+
+    function recordResult(name, ok, detail, error) {
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (ok ? 'pass' : 'fail');
+      badge.textContent = ok ? 'PASS' : 'FAIL';
+
+      var info = document.createElement('div');
+      info.className = 'test-info';
+
+      var nameEl = document.createElement('span');
+      nameEl.className = 'test-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+
+      if (detail) {
+        var detailEl = document.createElement('span');
+        detailEl.className = 'test-detail';
+        detailEl.textContent = detail;
+        info.appendChild(detailEl);
+      }
+
+      if (!ok && error) {
+        var errEl = document.createElement('span');
+        errEl.className = 'test-error';
+        errEl.textContent = error;
+        info.appendChild(errEl);
+      }
+
+      li.appendChild(badge);
+      li.appendChild(info);
+      resultsList.appendChild(li);
+
+      if (ok) { passed++; } else { failed++; }
+    }
+
+    function runAsyncTest(name, promise) {
+      return promise.then(function () {
+        recordResult(name, true, null, null);
+      }).catch(function (e) {
+        recordResult(name, false, null, e.message || String(e));
+      });
+    }
+
+    /* -----------------------------------------------------------------------
+     * Shared arbitrary: a valid Task object
+     * ----------------------------------------------------------------------- */
+    var taskArb = fc.record({
+      id:          fc.string(),
+      description: fc.string().filter(function (s) { return s.trim().length > 0; }),
+      completed:   fc.boolean(),
+      createdAt:   fc.integer()
+    });
+
+    /* -----------------------------------------------------------------------
+     * Helper: create a fresh in-memory storage mock for each property run
+     * ----------------------------------------------------------------------- */
+    function makeFreshStorage() {
+      return {
+        _store: {},
+        get: function (key) {
+          var val = this._store[key];
+          return val !== undefined ? val : null;
+        },
+        set: function (key, value) {
+          // Store a deep copy so later mutations to the array don't affect
+          // what was "persisted"
+          this._store[key] = JSON.parse(JSON.stringify(value));
+        }
+      };
+    }
+
+    /* -----------------------------------------------------------------------
+     * Property 2: Task addition grows the list
+     *
+     * For any task list state and any valid (non-empty, non-whitespace) task
+     * description, calling addTask SHALL increase the task count by exactly
+     * one and the new task SHALL appear in the list with the submitted
+     * description.
+     *
+     * Validates: Requirements 4.2, 4.4
+     * ----------------------------------------------------------------------- */
+    var pbt2Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb),
+        fc.string().filter(function (s) { return s.trim().length > 0; }),
+        function (initialTasks, description) {
+          // Set up a fresh storage mock and reset module state
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+
+          // Seed the module with the generated initial task array
+          // (deep copy so the property framework's shrinking doesn't interfere)
+          TodoModule.tasks = JSON.parse(JSON.stringify(initialTasks));
+
+          var countBefore = TodoModule.tasks.length;
+
+          // Call addTask with the valid description
+          var result = TodoModule.addTask(description);
+
+          // Must return true (success)
+          if (result !== true) { return false; }
+
+          // Count must have grown by exactly 1
+          if (TodoModule.tasks.length !== countBefore + 1) { return false; }
+
+          // The last task must carry the trimmed description
+          var added = TodoModule.tasks[TodoModule.tasks.length - 1];
+          if (added.description !== description.trim()) { return false; }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 3: Whitespace-only task descriptions are rejected
+     *
+     * For any string composed entirely of whitespace characters, calling
+     * addTask SHALL reject the submission and leave the task list unchanged.
+     *
+     * Validates: Requirements 4.3
+     * ----------------------------------------------------------------------- */
+    var pbt3Promise = fc.assert(
+      fc.property(
+        fc.stringOf(fc.constantFrom(' ', '\t', '\n')),
+        function (whitespaceStr) {
+          // Reset module state to an empty list
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+          TodoModule.tasks = [];
+
+          // Call addTask with the whitespace-only string
+          var result = TodoModule.addTask(whitespaceStr);
+
+          // Must return false (rejection)
+          if (result !== false) { return false; }
+
+          // Task list must remain empty
+          if (TodoModule.tasks.length !== 0) { return false; }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 5: Task edit preserves identity
+     *
+     * For any task array (minLength 1) and valid new description, editTask()
+     * updates only the target task's description; all other tasks and fields
+     * (id, completed, createdAt) are unchanged.
+     *
+     * Validates: Requirements 5.3, 5.5
+     * ----------------------------------------------------------------------- */
+    var pbt5Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb, { minLength: 1 }),
+        fc.string().filter(function (s) { return s.trim().length > 0; }),
+        function (initialTasks, newDescription) {
+          // Set up a fresh storage mock and reset module state
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+
+          // Seed the module with a deep copy of the generated task array
+          TodoModule.tasks = JSON.parse(JSON.stringify(initialTasks));
+
+          // Pick the first task as the edit target
+          var targetId = TodoModule.tasks[0].id;
+          var originalTasks = JSON.parse(JSON.stringify(TodoModule.tasks));
+
+          // Call editTask with a valid description
+          TodoModule.editTask(targetId, newDescription);
+
+          // The target task's description must be updated to the trimmed value
+          var trimmed = newDescription.trim();
+          var targetTask = null;
+          for (var i = 0; i < TodoModule.tasks.length; i++) {
+            if (TodoModule.tasks[i].id === targetId) {
+              targetTask = TodoModule.tasks[i];
+              break;
+            }
+          }
+          if (!targetTask) { return false; }
+          if (targetTask.description !== trimmed) { return false; }
+
+          // All other fields of the target task must be unchanged
+          var originalTarget = originalTasks[0];
+          if (targetTask.id !== originalTarget.id) { return false; }
+          if (targetTask.completed !== originalTarget.completed) { return false; }
+          if (targetTask.createdAt !== originalTarget.createdAt) { return false; }
+
+          // All other tasks must be completely unchanged
+          if (TodoModule.tasks.length !== originalTasks.length) { return false; }
+          for (var j = 1; j < originalTasks.length; j++) {
+            var orig = originalTasks[j];
+            var curr = TodoModule.tasks[j];
+            if (curr.id !== orig.id) { return false; }
+            if (curr.description !== orig.description) { return false; }
+            if (curr.completed !== orig.completed) { return false; }
+            if (curr.createdAt !== orig.createdAt) { return false; }
+          }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 6: Whitespace-only edits are rejected
+     *
+     * For any task array (minLength 1) and whitespace-only input, editTask()
+     * leaves the description unchanged.
+     *
+     * Validates: Requirements 5.4
+     * ----------------------------------------------------------------------- */
+    var pbt6Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb, { minLength: 1 }),
+        fc.stringOf(fc.constantFrom(' ', '\t', '\n')),
+        function (initialTasks, whitespaceStr) {
+          // Set up a fresh storage mock and reset module state
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+
+          // Seed the module with a deep copy of the generated task array
+          TodoModule.tasks = JSON.parse(JSON.stringify(initialTasks));
+
+          // Pick the first task as the edit target
+          var targetId = TodoModule.tasks[0].id;
+          var originalDescription = TodoModule.tasks[0].description;
+
+          // Call editTask with a whitespace-only string
+          TodoModule.editTask(targetId, whitespaceStr);
+
+          // The target task's description must remain unchanged
+          var targetTask = null;
+          for (var i = 0; i < TodoModule.tasks.length; i++) {
+            if (TodoModule.tasks[i].id === targetId) {
+              targetTask = TodoModule.tasks[i];
+              break;
+            }
+          }
+          if (!targetTask) { return false; }
+          if (targetTask.description !== originalDescription) { return false; }
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 7: Completion toggle is an involution
+     *
+     * For any task array (minLength 1), calling toggleTask() twice on the
+     * same task returns it to its original completed state.
+     *
+     * Validates: Requirements 6.2, 6.3
+     * ----------------------------------------------------------------------- */
+    var pbt7Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb, { minLength: 1 }),
+        function (initialTasks) {
+          // Set up a fresh storage mock and reset module state
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+
+          // Seed the module with a deep copy of the generated task array
+          TodoModule.tasks = JSON.parse(JSON.stringify(initialTasks));
+
+          // Pick the first task as the toggle target
+          var targetId = TodoModule.tasks[0].id;
+          var originalCompleted = TodoModule.tasks[0].completed;
+
+          // Toggle twice
+          TodoModule.toggleTask(targetId);
+          TodoModule.toggleTask(targetId);
+
+          // Find the task and verify it is back to its original state
+          var targetTask = null;
+          for (var i = 0; i < TodoModule.tasks.length; i++) {
+            if (TodoModule.tasks[i].id === targetId) {
+              targetTask = TodoModule.tasks[i];
+              break;
+            }
+          }
+          if (!targetTask) { return false; }
+          return targetTask.completed === originalCompleted;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Property 8: Deleted task is absent
+     *
+     * For any task array (minLength 1), after deleteTask(id), no task with
+     * that id remains in the list.
+     *
+     * Validates: Requirements 6.5
+     * ----------------------------------------------------------------------- */
+    var pbt8Promise = fc.assert(
+      fc.property(
+        fc.array(taskArb, { minLength: 1 }),
+        function (initialTasks) {
+          // Set up a fresh storage mock and reset module state
+          var storage = makeFreshStorage();
+          TodoModule._storage = storage;
+
+          // Seed the module with a deep copy of the generated task array
+          TodoModule.tasks = JSON.parse(JSON.stringify(initialTasks));
+
+          // Pick the first task's id as the delete target
+          var targetId = TodoModule.tasks[0].id;
+
+          // Delete the task
+          TodoModule.deleteTask(targetId);
+
+          // Verify no task with that id remains
+          for (var i = 0; i < TodoModule.tasks.length; i++) {
+            if (TodoModule.tasks[i].id === targetId) {
+              return false;
+            }
+          }
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    ).then(function () {
+      return Promise.resolve();
+    }).catch(function (e) {
+      return Promise.reject(e);
+    });
+
+    /* -----------------------------------------------------------------------
+     * Collect async results and update summary
+     * ----------------------------------------------------------------------- */
+    Promise.all([
+      runAsyncTest(
+        'Property 2: Task addition grows the list — Validates: Requirements 4.2, 4.4',
+        pbt2Promise
+      ),
+      runAsyncTest(
+        'Property 3: Whitespace-only task descriptions are rejected — Validates: Requirements 4.3',
+        pbt3Promise
+      ),
+      runAsyncTest(
+        'Property 5: Task edit preserves identity — Validates: Requirements 5.3, 5.5',
+        pbt5Promise
+      ),
+      runAsyncTest(
+        'Property 6: Whitespace-only edits are rejected — Validates: Requirements 5.4',
+        pbt6Promise
+      ),
+      runAsyncTest(
+        'Property 7: Completion toggle is an involution — Validates: Requirements 6.2, 6.3',
+        pbt7Promise
+      ),
+      runAsyncTest(
+        'Property 8: Deleted task is absent — Validates: Requirements 6.5',
+        pbt8Promise
+      )
+    ]).then(function () {
+      var total = passed + failed;
+      summaryEl.textContent = passed + ' / ' + total + ' tests passed' + (failed > 0 ? ' — ' + failed + ' failed' : ' ✓');
+      summaryEl.className = failed > 0 ? 'fail' : 'pass';
+    });
+  </script>
+</body>
+</html>
